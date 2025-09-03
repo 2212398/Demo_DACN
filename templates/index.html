@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Tưới Tiêu Thông Minh</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- Thêm Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        #predict_result table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        #predict_result th, #predict_result td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        #predict_result th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        #predict_result p {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="main-header">
+            <h1><i class="fas fa-seedling"></i> Hệ Thống Tưới Tiêu Thông Minh</h1>
+            <button class="logout-button" onclick="confirmLogout()"><i class="fas fa-sign-out-alt"></i> Đăng xuất</button>
+        </header>
+
+        <section class="dashboard">
+            <div class="card sensor-card">
+                <div class="card-header">
+                    <i class="fas fa-thermometer-half card-icon temperature"></i>
+                    <h3>Nhiệt độ</h3>
+                </div>
+                <p class="sensor-value" id="temperature">-- °C</p>
+            </div>
+            <div class="card sensor-card">
+                 <div class="card-header">
+                    <i class="fas fa-tint card-icon humidity"></i>
+                    <h3>Độ ẩm không khí</h3>
+                 </div>
+                <p class="sensor-value" id="humidity">-- %</p>
+            </div>
+            <div class="card sensor-card">
+                 <div class="card-header">
+                    <i class="fas fa-water card-icon soil"></i>
+                    <h3>Độ ẩm đất</h3>
+                 </div>
+                <p class="sensor-value" id="soilmoisture">-- %</p>
+            </div>
+        </section>
+
+        <div class="main-content">
+            <div class="control-column">
+                <section class="section card">
+                    <h2 class="section-title"><i class="fas fa-water"></i> Điều khiển Bơm</h2>
+                    <div class="control-item">
+                        <label class="switch">
+                            <input type="checkbox" id="pump_switch" onchange="togglePump(this.checked)">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label">Tắt/Bật Bơm</span>
+                    </div>
+                </section>
+
+                <section class="section card">
+                    <h2 class="section-title"><i class="fas fa-bullseye"></i> Mục tiêu độ ẩm đất (%)</h2>
+                    <div class="input-group">
+                        <label for="soil_min">Min:</label>
+                        <input type="number" id="soil_min" min="0" max="100" value="40" oninput="updateSoilTarget()">
+                    </div>
+                    <div class="input-group">
+                        <label for="soil_max">Max:</label>
+                        <input type="number" id="soil_max" min="0" max="100" value="60" oninput="updateSoilTarget()">
+                    </div>
+                    <p class="target-display">Mục tiêu: <span id="soil_min_value">40</span>% - <span id="soil_max_value">60</span>%</p>
+                </section>
+
+                <section class="section card">
+                    <h2 class="section-title"><i class="fas fa-cogs"></i> Chế độ tự động</h2>
+                    <div class="control-item">
+                        <label class="switch">
+                            <input type="checkbox" id="auto_switch" onchange="sendCommand('autoenable', this.checked ? 'ON' : 'OFF')">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label">Bật Tự động</span>
+                    </div>
+                </section>
+
+                <section class="section card">
+                    <h2 class="section-title"><i class="fas fa-chart-line"></i> Lịch sử cảm biến</h2>
+                    <canvas id="sensorChart" style="max-height: 250px;"></canvas>
+                    <div class="input-group">
+                        <label for="chart_type">Loại dữ liệu:</label>
+                        <select id="chart_type" onchange="updateChart()">
+                            <option value="temperature">Nhiệt độ</option>
+                            <option value="humidity">Độ ẩm không khí</option>
+                            <option value="soilmoisture">Độ ẩm đất</option>
+                        </select>
+                    </div>
+                </section>
+
+                <section class="section card">
+                    <h2 class="section-title"><i class="fas fa-wifi"></i> Trạng thái kết nối</h2>
+                    <p id="connection_status">Đang kiểm tra...</p>
+                </section>
+            </div>
+
+            <div class="feature-column">
+                <section class="section card">
+                    <h2 class="section-title"><i class="fas fa-brain"></i> Dự đoán lượng nước</h2>
+                    <div class="input-group">
+                        <label for="temp_input">Nhiệt độ (°C):</label>
+                        <input type="number" id="temp_input" placeholder="Nhiệt độ (°C)" step="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="humidity_input">Độ ẩm (%):</label>
+                        <input type="number" id="humidity_input" placeholder="Độ ẩm không khí (%)" step="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="moisture_input">Độ ẩm đất (%):</label>
+                        <input type="number" id="moisture_input" placeholder="Độ ẩm đất (%)" step="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="soiltype_input">Loại đất:</label>
+                        <select id="soiltype_input">
+                            <option value="Loamy">Đất mùn</option>
+                            <option value="Sandy">Đất cát</option>
+                            <option value="Clayey">Đất sét</option>
+                            <option value="Black">Đất đen</option>
+                            <option value="Red">Đất đỏ</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="croptype_input">Loại cây:</label>
+                        <select id="croptype_input">
+                            <option value="Paddy">Lúa</option>
+                            <option value="Sugarcane">Cây mía</option>
+                            <option value="Wheat">Lúa mì</option>
+                            <option value="Cotton">Cây bông</option>
+                            <option value="Oil seeds">Hạt dầu</option>
+                            <option value="Barley">Lúa mạch</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-predict" onclick="predictWaterUsage()"><i class="fas fa-search"></i> Dự đoán</button>
+                    <div id="predict_result">Kết quả dự đoán sẽ hiển thị ở đây.</div>
+                </section>
+
+                <section class="section card">
+                    <h2 class="section-title"><i class="fas fa-calendar-alt"></i> Lập lịch tưới</h2>
+                    <div class="input-group">
+                        <label for="scheduled_time">Thời gian bật:</label>
+                        <input type="datetime-local" id="scheduled_time" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="off_time">Thời gian tắt:</label>
+                        <input type="datetime-local" id="off_time" required>
+                    </div>
+                    <div class="input-group">
+                        <label for="repeat_daily">Lặp lại hằng ngày:</label>
+                        <input type="checkbox" id="repeat_daily" name="repeat_daily">
+                    </div>
+                    <button class="btn btn-schedule" onclick="scheduleIrrigation()"><i class="fas fa-clock"></i> Thêm Lịch</button>
+                    <div id="schedules_list_container">
+                        <h3>Lịch đang chờ:</h3>
+                        <ul id="schedules"><li>Chưa có lịch nào.</li></ul>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+    <script>
+        let lastPumpState = null;
+        let lastAutoState = null;
+        let sensorChart = null;
+
+        function confirmLogout() {
+            if (confirm("Bạn có chắc chắn muốn đăng xuất?")) {
+                window.location.href = "{{ url_for('logout') }}";
+            }
+        }
+
+        function updateSensorData() {
+            fetch('/sensor_data')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('temperature').textContent = 'Lỗi';
+                        document.getElementById('humidity').textContent = 'Lỗi';
+                        document.getElementById('soilmoisture').textContent = 'Lỗi';
+                    } else {
+                        document.getElementById('temperature').textContent = parseFloat(data.temperature).toFixed(1) + ' °C';
+                        document.getElementById('humidity').textContent = parseFloat(data.humidity).toFixed(1) + ' %';
+                        document.getElementById('soilmoisture').textContent = parseFloat(data.soilmoisture).toFixed(1) + ' %';
+                        if (!document.getElementById('temp_input').value) {
+                            document.getElementById('temp_input').value = parseFloat(data.temperature).toFixed(1);
+                        }
+                        if (!document.getElementById('humidity_input').value) {
+                            document.getElementById('humidity_input').value = parseFloat(data.humidity).toFixed(1);
+                        }
+                        if (!document.getElementById('moisture_input').value) {
+                            document.getElementById('moisture_input').value = parseFloat(data.soilmoisture).toFixed(1);
+                        }
+
+                        // Kiểm tra chế độ tự động và điều khiển relay
+                        if (lastAutoState === 'ON') {
+                            const soilMoisture = parseFloat(data.soilmoisture);
+                            const soilMin = parseFloat(document.getElementById('soil_min_value').textContent);
+                            const soilMax = parseFloat(document.getElementById('soil_max_value').textContent);
+
+                            if (soilMoisture < soilMin && lastPumpState !== 'ON') {
+                                sendCommand('relaycontrol', 'ON');
+                                console.log('Độ ẩm đất thấp hơn mục tiêu, bật bơm tự động');
+                            } else if (soilMoisture >= soilMax && lastPumpState !== 'OFF') {
+                                sendCommand('relaycontrol', 'OFF');
+                                console.log('Độ ẩm đất đạt mục tiêu, tắt bơm tự động');
+                            }
+                        }
+                    }
+                    updateChart(); // Cập nhật biểu đồ sau khi lấy dữ liệu mới
+                })
+                .catch(error => {
+                    console.error('Lỗi lấy dữ liệu cảm biến:', error);
+                    document.getElementById('temperature').textContent = 'Lỗi';
+                    document.getElementById('humidity').textContent = 'Lỗi';
+                    document.getElementById('soilmoisture').textContent = 'Lỗi';
+                });
+        }
+
+        function sendCommand(feed, value) {
+            console.log(`Sending command: feed=${feed}, value=${value}`);
+            fetch('/control', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: `feed=${feed}&value=${value}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(`Gửi ${value} tới ${feed}: ${data.success ? 'Thành công' : 'Thất bại'}`);
+                if (feed === 'relaycontrol') {
+                    lastPumpState = value;
+                    syncPumpState();
+                } else if (feed === 'autoenable') {
+                    lastAutoState = value;
+                    syncAutoState();
+                }
+            })
+            .catch(error => console.error('Lỗi gửi lệnh:', error));
+        }
+
+        function togglePump(isChecked) {
+            const newState = isChecked ? 'ON' : 'OFF';
+            if (newState !== lastPumpState) {
+                sendCommand('relaycontrol', newState);
+            } else {
+                console.log("Trạng thái bơm không đổi, không gửi lệnh.");
+            }
+        }
+
+        function syncPumpState() {
+            fetch('/pump_state')
+                .then(response => response.json())
+                .then(data => {
+                    const pumpSwitch = document.getElementById('pump_switch');
+                    const currentState = data.state === 'ON';
+                    const uiState = pumpSwitch.checked;
+                    console.log(`Sync Pump: Adafruit State = ${data.state}, UI State = ${uiState}`);
+                    if (currentState !== uiState) {
+                        console.log("Trạng thái khác biệt -> Cập nhật UI");
+                        pumpSwitch.checked = currentState;
+                    }
+                    lastPumpState = data.state;
+                })
+                .catch(error => console.error('Lỗi đồng bộ trạng thái bơm:', error));
+        }
+
+        function syncAutoState() {
+            fetch('/auto_state')
+                .then(response => response.json())
+                .then(data => {
+                    const autoSwitch = document.getElementById('auto_switch');
+                    const currentState = data.state === 'ON';
+                    const uiState = autoSwitch.checked;
+                    if (currentState !== uiState) {
+                        autoSwitch.checked = currentState;
+                    }
+                    lastAutoState = data.state;
+                })
+                .catch(error => console.error('Lỗi đồng bộ trạng thái chế độ tự động:', error));
+        }
+
+        function updateSoilTarget() {
+            const min = document.getElementById('soil_min').value;
+            const max = document.getElementById('soil_max').value;
+            if (min && max && parseFloat(min) <= parseFloat(max)) {
+                document.getElementById('soil_min_value').textContent = min;
+                document.getElementById('soil_max_value').textContent = max;
+                fetch('/update_soil_target', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: `soil_min=${min}&soil_max=${max}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        console.error('Lỗi cập nhật mục tiêu độ ẩm đất:', data.error);
+                    }
+                })
+                .catch(error => console.error('Lỗi gửi mục tiêu độ ẩm đất:', error));
+            }
+        }
+
+        function predictWaterUsage() {
+            const temp = document.getElementById('temp_input').value;
+            const humidity = document.getElementById('humidity_input').value;
+            const moisture = document.getElementById('moisture_input').value;
+            const soilType = document.getElementById('soiltype_input').value;
+            const cropType = document.getElementById('croptype_input').value;
+            const resultElement = document.getElementById('predict_result');
+
+            if (!temp || !humidity || !moisture || !soilType || !cropType) {
+                resultElement.innerHTML = "<p style='color: red;'>Vui lòng nhập đầy đủ thông tin.</p>";
+                return;
+            }
+
+            resultElement.innerHTML = "<p>Đang dự đoán...</p>";
+            resultElement.style.color = '#666';
+
+            const data = {
+                Temparature: parseFloat(temp),
+                Humidity: parseFloat(humidity),
+                Moisture: parseFloat(moisture),
+                SoilType: soilType,
+                CropType: cropType
+            };
+
+            fetch('/predict', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultElement.innerHTML = `<p style='color: red;'>Lỗi dự đoán: ${data.error}</p>`;
+                } else {
+                    let tableRows = '';
+                    for (const [model, value] of Object.entries(data.AllModelOutputs)) {
+                        tableRows += `<tr><td>${model}</td><td>${value.toFixed(1)} ml/m²</td></tr>`;
+                    }
+                    resultElement.innerHTML = `
+                        <p>Dự đoán trung bình: ${data.PredictedWaterUsage.toFixed(1)} ml/m²</p>
+                        <table>
+                            <tr><th>Mô hình</th><th>Dự đoán (ml/m²)</th></tr>
+                            ${tableRows}
+                        </table>
+                    `;
+                    resultElement.style.color = 'green';
+                }
+            })
+            .catch(error => {
+                console.error('Lỗi dự đoán:', error);
+                resultElement.innerHTML = "<p style='color: red;'>Lỗi kết nối khi dự đoán.</p>";
+            });
+        }
+
+        function scheduleIrrigation() {
+            const scheduled_time = document.getElementById('scheduled_time').value;
+            const off_time = document.getElementById('off_time').value;
+            const repeat_daily = document.getElementById('repeat_daily').checked;
+            if (!scheduled_time || !off_time) {
+                alert('Vui lòng nhập cả thời gian bật và tắt.');
+                return;
+            }
+            if (new Date(off_time) <= new Date(scheduled_time)) {
+                alert('Thời gian tắt phải sau thời gian bật.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('scheduled_time', scheduled_time);
+            formData.append('off_time', off_time);
+            if (repeat_daily) {
+                formData.append('repeat_daily', 'on');
+            }
+
+            fetch('/schedule', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Lập lịch thành công');
+                    updateSchedules();
+                    document.getElementById('scheduled_time').value = '';
+                    document.getElementById('off_time').value = '';
+                    document.getElementById('repeat_daily').checked = false;
+                } else {
+                    console.error('Lỗi lập lịch:', data.error);
+                    alert('Lỗi lập lịch: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Lỗi gửi yêu cầu lập lịch:', error);
+                alert('Lỗi kết nối khi gửi yêu cầu lập lịch.');
+            });
+        }
+
+        function deleteSchedule(id) {
+            if (!confirm(`Bạn có chắc muốn xóa lịch #${id}?`)) {
+                return;
+            }
+            fetch(`/delete_schedule/${id}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log(`Đã xóa lịch với ID ${id}`);
+                    updateSchedules();
+                } else {
+                    console.error('Lỗi xóa lịch:', data.error);
+                    alert('Lỗi xóa lịch: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Lỗi gửi yêu cầu xóa lịch:', error);
+                alert('Lỗi kết nối khi gửi yêu cầu xóa lịch.');
+            });
+        }
+
+        function formatDateTime(isoString) {
+            if (!isoString) return 'N/A';
+            try {
+                const date = new Date(isoString);
+                const options = { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' };
+                return date.toLocaleString('vi-VN', options);
+            } catch (e) {
+                console.error("Lỗi định dạng ngày giờ:", e);
+                return isoString;
+            }
+        }
+
+        function updateSchedules() {
+            fetch('/schedules')
+                .then(response => response.json())
+                .then(data => {
+                    const schedulesList = document.getElementById('schedules');
+                    if (data && data.length > 0) {
+                        let html = '';
+                        data.forEach(s => {
+                            let formattedStart = formatDateTime(s.scheduled_time);
+                            let formattedEnd = formatDateTime(s.off_time);
+                            let repeatInfo = s.repeat_daily ? '<span style="color: green;">(Lặp lại hằng ngày)</span>' : '';
+                            html += `<li>
+                                        <i class="far fa-clock"></i> Bật: ${formattedStart} - Tắt: ${formattedEnd} ${repeatInfo}
+                                        <button class="delete-btn" onclick="deleteSchedule(${s.id})" title="Xóa lịch ${s.id}">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </li>`;
+                        });
+                        schedulesList.innerHTML = html;
+                    } else {
+                        schedulesList.innerHTML = '<li>Chưa có lịch nào đang chờ.</li>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Lỗi lấy lịch:', error);
+                    document.getElementById('schedules').innerHTML = '<li>Lỗi tải danh sách lịch.</li>';
+                });
+        }
+
+        function checkConnection() {
+            const statusElement = document.getElementById('connection_status');
+            statusElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang kiểm tra...';
+            fetch('/check_connection')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'connected') {
+                        statusElement.innerHTML = `<i class="fas fa-check-circle" style="color: green;"></i> Đã kết nối`;
+                    } else {
+                        statusElement.innerHTML = `<i class="fas fa-times-circle" style="color: red;"></i> Mất kết nối`;
+                        statusElement.innerHTML += `<br><small>Lỗi: ${data.message}</small>`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Lỗi kiểm tra kết nối:', error);
+                    statusElement.innerHTML = `<i class="fas fa-times-circle" style="color: red;"></i> Lỗi cục bộ khi kiểm tra`;
+                });
+        }
+
+        // Hàm cập nhật biểu đồ
+        function updateChart() {
+            fetch('/sensor_history?page=1&per_page=50')
+                .then(response => response.json())
+                .then(data => {
+                    const chartType = document.getElementById('chart_type').value;
+                    const labels = data.data.map(d => formatDateTime(d.timestamp));
+                    const values = data.data.map(d => d[chartType]);
+                    const unit = chartType === 'temperature' ? '°C' : '%';
+
+                    if (sensorChart) {
+                        sensorChart.destroy();
+                    }
+
+                    sensorChart = new Chart(document.getElementById('sensorChart'), {
+                        type: 'line',
+                        data: {
+                            labels: labels.reverse(),
+                            datasets: [{
+                                label: chartType === 'temperature' ? 'Nhiệt độ' : chartType === 'humidity' ? 'Độ ẩm không khí' : 'Độ ẩm đất',
+                                data: values.reverse(),
+                                borderColor: chartType === 'temperature' ? '#ff9800' : chartType === 'humidity' ? '#2196F3' : '#8d6e63',
+                                fill: false
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                x: { title: { display: true, text: 'Thời gian' } },
+                                y: { title: { display: true, text: unit } }
+                            }
+                        }
+                    });
+                })
+                .catch(error => console.error('Lỗi lấy dữ liệu lịch sử:', error));
+        }
+
+        document.addEventListener('DOMContentLoaded', (event) => {
+            console.log("DOM fully loaded and parsed");
+            updateSensorData();
+            updateSchedules();
+            checkConnection();
+            syncPumpState();
+            syncAutoState();
+            updateChart();
+
+            setInterval(updateSensorData, 10000);
+            setInterval(updateSchedules, 30000);
+            setInterval(checkConnection, 60000);
+            setInterval(syncPumpState, 5000);
+            setInterval(syncAutoState, 5000);
+            setInterval(updateChart, 10000);
+        });
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'936c6fb9c8dd4527',t:'MTc0NTczNzE1OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'93a20728a984bf93',t:'MTc0NjI5OTEwNi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

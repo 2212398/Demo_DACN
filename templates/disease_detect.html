@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Nhận diện sâu bệnh cây trồng</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body { font-family: Arial, sans-serif; background: #f6f8fa; }
+        .container { max-width: 500px; margin: 40px auto; background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        h2 { text-align: center; color: #2c3e50; }
+        .result { margin-top: 24px; padding: 16px; background: #eafaf1; border-radius: 8px; color: #27ae60; text-align: center; font-size: 1.2em; }
+        .btn { background: #27ae60; color: #fff; border: none; padding: 10px 24px; border-radius: 6px; cursor: pointer; font-size: 1em; }
+        .btn:hover { background: #219150; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Nhận diện sâu bệnh cây trồng</h2>
+        <form method="POST" enctype="multipart/form-data">
+            <input type="file" name="image" accept="image/*" required style="margin-bottom:16px;">
+            <br>
+            <button type="submit" class="btn">Nhận diện</button>
+        </form>
+        {% if result %}
+        <div class="result">
+            <strong>Kết quả nhận diện:</strong> {{ result }}
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
